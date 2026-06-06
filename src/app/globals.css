@@ -1,26 +1,109 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-bg: #090c10;
+  --color-panel: #10151c;
+  --color-panel-2: #141b24;
+  --color-line: #1f2832;
+  --color-line-bright: #2c3947;
+  --color-text: #e9eef4;
+  --color-muted: #8593a3;
+  --color-faint: #5a6675;
+  --color-brand: #2dd4d4;
+  --color-brand-dim: #1a8c8c;
+  --color-pass: #3ddc97;
+  --color-warn: #f4b740;
+  --color-fail: #fb6a82;
+
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    background-image:
+      radial-gradient(120% 80% at 50% -10%, rgba(45, 212, 212, 0.07), transparent 60%),
+      linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+    background-attachment: fixed;
+  }
+  ::selection {
+    background-color: var(--color-brand);
+    color: #04201f;
+  }
+  input {
+    font-family: var(--font-mono);
+  }
+  input:focus {
+    outline: none;
+  }
+  button {
+    cursor: pointer;
+  }
+  code,
+  pre {
+    font-family: var(--font-mono);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@keyframes sweep {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(2200%); opacity: 0; }
+}
+.scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-brand), transparent);
+  box-shadow: 0 0 16px 2px rgba(45, 212, 212, 0.45);
+  animation: sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes printIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.print-in {
+  opacity: 0;
+  animation: printIn 0.34s ease-out forwards;
+}
+
+@keyframes ledPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 106, 130, 0.5); }
+  50% { box-shadow: 0 0 0 5px rgba(251, 106, 130, 0); }
+}
+.led-fail { animation: ledPulse 1.8s ease-in-out infinite; }
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.caret { animation: blink 1.1s step-end infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scanline, .print-in, .led-fail, .caret { animation: none; }
+  .print-in { opacity: 1; }
 }
