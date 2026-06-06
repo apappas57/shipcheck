@@ -14,7 +14,7 @@ const sans = Hanken_Grotesk({
   display: "swap",
 });
 
-const SITE = "https://shipcheck.vercel.app";
+const SITE = "https://shipcheck-five.vercel.app";
 const DESCRIPTION =
   "Paste a URL. ShipCheck runs the indexing and metadata checks that actually keep pages out of Google, and gives you the exact Next.js fix. No login.";
 
