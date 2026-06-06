@@ -15,7 +15,7 @@ interface Report {
   url: string;
   finalUrl: string;
   checkedAt: string;
-  summary: { fails: number; warns: number; passes: number; grade: string };
+  summary: { score: number; fails: number; warns: number; passes: number; grade: string };
   results: CheckResult[];
 }
 
@@ -37,6 +37,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   structure: "Structure",
 };
 const SCAN_STEPS = ["fetching page", "reading robots.txt", "parsing sitemap", "checking canonical", "auditing metadata"];
+const ORDER: Record<Status, number> = { fail: 0, warn: 1, pass: 2 };
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -78,12 +79,9 @@ export default function Home() {
   }
 
   const grade = report?.summary.grade ?? "";
-  const gradeColor =
-    report && report.summary.fails > 0
-      ? "text-[var(--color-fail)]"
-      : report && report.summary.warns > 2
-        ? "text-[var(--color-warn)]"
-        : "text-[var(--color-pass)]";
+  const sc = report?.summary.score ?? 0;
+  const scoreColor =
+    !report ? "var(--color-faint)" : report.summary.fails > 0 || sc < 75 ? "var(--color-fail)" : sc < 90 ? "var(--color-warn)" : "var(--color-pass)";
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col px-5 pb-20 pt-8 sm:pt-14">
@@ -171,11 +169,19 @@ export default function Home() {
       {/* results */}
       {report && !loading && (
         <section className="mt-8">
-          {/* grade banner */}
-          <div className="flex flex-wrap items-end justify-between gap-4 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-5 py-4">
-            <div>
-              <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--color-faint)]">verdict</p>
-              <p className={`mt-1 font-mono text-2xl font-bold uppercase tracking-tight ${gradeColor}`}>{grade}</p>
+          {/* score banner */}
+          <div className="flex flex-wrap items-center justify-between gap-5 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-5 py-5">
+            <div className="flex items-center gap-5">
+              <div className="flex items-baseline font-mono font-bold leading-none" style={{ color: scoreColor }}>
+                <span className="text-5xl tabular-nums">{sc}</span>
+                <span className="text-base text-[var(--color-faint)]">/100</span>
+              </div>
+              <div>
+                <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--color-faint)]">shipcheck score</p>
+                <p className="font-mono text-lg font-bold uppercase tracking-tight" style={{ color: scoreColor }}>
+                  {grade}
+                </p>
+              </div>
             </div>
             <div className="flex gap-5 font-mono text-[13px]">
               <span className="text-[var(--color-fail)]">{report.summary.fails} fail</span>
@@ -183,12 +189,22 @@ export default function Home() {
               <span className="text-[var(--color-pass)]">{report.summary.passes} pass</span>
             </div>
           </div>
+          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-[var(--color-line)]">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${sc}%`, backgroundColor: scoreColor }} />
+          </div>
           <p className="mt-2 break-all font-mono text-[11px] text-[var(--color-faint)]">{report.finalUrl}</p>
 
           {/* grouped checks */}
           <div className="mt-6 space-y-6">
-            {CATEGORY_ORDER.filter((c) => report.results.some((r) => r.category === c)).map((cat) => {
-              const rows = report.results.filter((r) => r.category === cat);
+            {CATEGORY_ORDER.filter((c) => report.results.some((r) => r.category === c))
+              .sort((a, b) => {
+                const worst = (c: string) => Math.min(...report.results.filter((r) => r.category === c).map((r) => ORDER[r.status]));
+                return worst(a) - worst(b);
+              })
+              .map((cat) => {
+              const rows = report.results
+                .filter((r) => r.category === cat)
+                .sort((a, b) => ORDER[a.status] - ORDER[b.status]);
               return (
                 <div key={cat}>
                   <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--color-faint)]">

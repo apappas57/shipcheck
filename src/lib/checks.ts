@@ -271,16 +271,31 @@ export function runChecks(input: CheckInput): CheckResult[] {
     results.push({ id: "tw-ok", label: "Twitter card", status: "pass", category: "social", detail: `twitter:card = "${twCard}"` });
   }
 
-  // ---- STRUCTURE: JSON-LD ----
+  // ---- STRUCTURE: JSON-LD (presence + validity) ----
   const jsonld = $('script[type="application/ld+json"]');
-  results.push({
-    id: "jsonld",
-    label: "Structured data (JSON-LD)",
-    status: jsonld.length > 0 ? "pass" : "warn",
-    category: "structure",
-    detail: jsonld.length > 0 ? `${jsonld.length} JSON-LD block(s) found (rich-result eligible).` : "No JSON-LD structured data. Adding it unlocks rich results (ratings, breadcrumbs, FAQ, etc).",
-    fix: jsonld.length > 0 ? undefined : 'Add a <script type="application/ld+json"> with the appropriate schema.org type (Organization, Article, Product, LocalBusiness...).',
-  });
+  if (jsonld.length === 0) {
+    results.push({ id: "jsonld", label: "Structured data (JSON-LD)", status: "warn", category: "structure", detail: "No JSON-LD structured data. Adding it unlocks rich results (ratings, breadcrumbs, FAQ, etc).", fix: 'Add a <script type="application/ld+json"> with the appropriate schema.org type (Organization, Article, Product, LocalBusiness...).' });
+  } else {
+    let invalid = 0;
+    let hasType = false;
+    jsonld.each((_, el) => {
+      const raw = $(el).contents().text();
+      try {
+        const parsed = JSON.parse(raw);
+        const nodes = Array.isArray(parsed) ? parsed : [parsed];
+        if (nodes.some((n) => n && (n["@type"] || n["@graph"]))) hasType = true;
+      } catch {
+        invalid++;
+      }
+    });
+    if (invalid > 0) {
+      results.push({ id: "jsonld", label: "Structured data (JSON-LD)", status: "fail", category: "structure", detail: `${invalid} of ${jsonld.length} JSON-LD block(s) contain invalid JSON, so Google ignores them entirely.`, fix: "Fix the JSON syntax (trailing commas, unescaped quotes). Validate at search.google.com/test/rich-results." });
+    } else if (!hasType) {
+      results.push({ id: "jsonld", label: "Structured data (JSON-LD)", status: "warn", category: "structure", detail: `${jsonld.length} JSON-LD block(s) found but none declare an @type, so they're not rich-result eligible.`, fix: 'Add an "@type" (e.g. "Organization", "Article", "Product").' });
+    } else {
+      results.push({ id: "jsonld", label: "Structured data (JSON-LD)", status: "pass", category: "structure", detail: `${jsonld.length} valid JSON-LD block(s) with @type (rich-result eligible).` });
+    }
+  }
 
   // ---- STRUCTURE: viewport + lang (quick mobile/i18n sanity) ----
   const viewport = $('meta[name="viewport"]').attr("content");
@@ -290,6 +305,97 @@ export function runChecks(input: CheckInput): CheckResult[] {
     results.push({ id: "basics", label: "Mobile / lang basics", status: "warn", category: "structure", detail: `Missing ${missing}.`, fix: !lang ? "Set <html lang=\"en\"> in app/layout.tsx." : "Next.js adds a viewport by default; ensure it wasn't removed." });
   } else {
     results.push({ id: "basics-ok", label: "Mobile / lang basics", status: "pass", category: "structure", detail: `viewport set, lang="${lang}".` });
+  }
+
+  // ---- INDEXING: HTTPS + mixed content ----
+  if (!input.finalUrl.startsWith("https://")) {
+    results.push({ id: "https", label: "HTTPS", status: "fail", category: "indexing", detail: "Served over HTTP, not HTTPS. Google down-ranks non-HTTPS pages and browsers show a 'Not secure' warning.", fix: "Serve over HTTPS (Vercel/Netlify do this automatically) and redirect http->https." });
+  } else {
+    const mixed: string[] = [];
+    $("img[src], script[src], link[href], iframe[src], source[src]").each((_, el) => {
+      const a = el.attribs ?? {};
+      const ref = a.src || a.href || "";
+      if (/^http:\/\//i.test(ref)) mixed.push(ref);
+    });
+    results.push({
+      id: "mixed",
+      label: "HTTPS / mixed content",
+      status: mixed.length ? "fail" : "pass",
+      category: "indexing",
+      detail: mixed.length
+        ? `${mixed.length} resource(s) load over insecure http:// on an https page. Browsers block these, breaking images/scripts.`
+        : "Served over HTTPS with no insecure resources.",
+      fix: mixed.length ? `Switch to https:// : ${mixed.slice(0, 2).join(", ")}${mixed.length > 2 ? " …" : ""}` : undefined,
+    });
+  }
+
+  // ---- STRUCTURE: image alt coverage ----
+  const imgs = $("img");
+  if (imgs.length === 0) {
+    results.push({ id: "alt", label: "Image alt text", status: "pass", category: "structure", detail: "No <img> tags on the page." });
+  } else {
+    let missingAlt = 0;
+    imgs.each((_, el) => {
+      if ($(el).attr("alt") === undefined) missingAlt++;
+    });
+    results.push({
+      id: "alt",
+      label: "Image alt text",
+      status: missingAlt === 0 ? "pass" : "warn",
+      category: "structure",
+      detail: missingAlt === 0 ? `All ${imgs.length} images have an alt attribute.` : `${missingAlt} of ${imgs.length} images are missing an alt attribute (hurts accessibility and image SEO).`,
+      fix: missingAlt === 0 ? undefined : 'Add alt text to every image (alt="" for purely decorative ones). With next/image the alt prop is required.',
+    });
+  }
+
+  // ---- STRUCTURE: heading hierarchy ----
+  let prevLevel = 0;
+  let firstSkip = "";
+  $("h1, h2, h3, h4, h5, h6").each((_, el) => {
+    const lvl = parseInt(el.tagName.substring(1), 10);
+    if (prevLevel && lvl > prevLevel + 1 && !firstSkip) firstSkip = `h${prevLevel} → h${lvl}`;
+    prevLevel = lvl;
+  });
+  results.push({
+    id: "headings",
+    label: "Heading order",
+    status: firstSkip ? "warn" : "pass",
+    category: "structure",
+    detail: firstSkip ? `Heading levels skip (${firstSkip}). Crawlers and screen readers expect sequential headings.` : "Heading levels are sequential (no skipped levels).",
+    fix: firstSkip ? "Don't jump heading levels; use h2 before h3, etc. Control size with CSS, not by choosing a smaller tag." : undefined,
+  });
+
+  // ---- STRUCTURE: favicon ----
+  const hasFavicon = $('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]').length > 0;
+  results.push({
+    id: "favicon",
+    label: "Favicon",
+    status: hasFavicon ? "pass" : "warn",
+    category: "structure",
+    detail: hasFavicon ? "Favicon declared." : "No favicon link found. Add one for the browser tab and the search-result icon.",
+    fix: hasFavicon ? undefined : 'Add app/icon.png (Next.js auto-generates the <link>) or a <link rel="icon">.',
+  });
+
+  // ---- INDEXING: hreflang (only surfaced if present) ----
+  const hreflangs = $('link[rel="alternate"][hreflang]');
+  if (hreflangs.length > 0) {
+    let hasXDefault = false;
+    let selfRef = false;
+    hreflangs.each((_, el) => {
+      const hl = ($(el).attr("hreflang") || "").toLowerCase();
+      const href = $(el).attr("href") || "";
+      if (hl === "x-default") hasXDefault = true;
+      if (norm(href) === norm(input.finalUrl)) selfRef = true;
+    });
+    const ok = hasXDefault && selfRef;
+    results.push({
+      id: "hreflang",
+      label: "hreflang",
+      status: ok ? "pass" : "warn",
+      category: "indexing",
+      detail: ok ? `${hreflangs.length} hreflang tags, with x-default and a self-reference.` : `${hreflangs.length} hreflang tags but ${!hasXDefault ? "no x-default" : "no self-reference"}. Incomplete hreflang clusters get ignored by Google.`,
+      fix: ok ? undefined : "Every language version must list all versions including itself, plus an x-default.",
+    });
   }
 
   return results;
@@ -322,10 +428,32 @@ function isPathBlocked(robotsTxt: string, pageUrl: string): boolean {
   return disallows.some((rule) => path.startsWith(rule));
 }
 
-export function score(results: CheckResult[]): { fails: number; warns: number; passes: number; grade: string } {
+const CATEGORY_WEIGHT: Record<Category, number> = {
+  indexing: 3, // these are the bugs that actually keep pages out of Google
+  social: 2,
+  metadata: 2,
+  structure: 1,
+};
+
+export function score(results: CheckResult[]): {
+  score: number;
+  grade: string;
+  fails: number;
+  warns: number;
+  passes: number;
+} {
+  let earned = 0;
+  let possible = 0;
+  for (const r of results) {
+    const w = CATEGORY_WEIGHT[r.category] ?? 1;
+    possible += w;
+    earned += r.status === "pass" ? w : r.status === "warn" ? w * 0.5 : 0;
+  }
+  const value = possible > 0 ? Math.round((earned / possible) * 100) : 100;
   const fails = results.filter((r) => r.status === "fail").length;
   const warns = results.filter((r) => r.status === "warn").length;
   const passes = results.filter((r) => r.status === "pass").length;
-  const grade = fails > 0 ? "needs work" : warns > 2 ? "almost there" : "ship it";
-  return { fails, warns, passes, grade };
+  // a single fail caps the grade: you can't "ship it" with a real blocker
+  const grade = fails > 0 ? "needs work" : value >= 90 ? "ship it" : value >= 75 ? "almost there" : "needs work";
+  return { score: value, grade, fails, warns, passes };
 }
